@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
-
+st.markdown('<meta http-equiv="refresh" content="45">', unsafe_allow_html=True)
 st.set_page_config(page_title="V4 MOBILE", layout="centered", page_icon="🎯")
 st.markdown("<h2 style='text-align:center;'>🎯 V4 MOBILE</h2>", unsafe_allow_html=True)
 
