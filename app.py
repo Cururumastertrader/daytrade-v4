@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 st.markdown('<meta http-equiv="refresh" content="45">', unsafe_allow_html=True)
 st.set_page_config(page_title="V4 BINANCE", layout="centered", page_icon="🎯")
@@ -17,11 +17,13 @@ with st.expander("💰 MINHA BANCA - CLICA AQUI", expanded=True):
 
 risco_reais = banca * (risco_pct/100)
 max_loss = banca * 0.02
-HORA = datetime.now().hour
+# HORA BRASIL = UTC - 3h
+AGORA = datetime.utcnow() - timedelta(hours=3)
+HORA = AGORA.hour
 BLOQUEADO = False
 MOTIVO = ""
 if HORA >= 23 or HORA < 8:
-    BLOQUEADO=True; MOTIVO=f"🌙 MADRUGADA {datetime.now().strftime('%H:%M')} - DORME"
+    BLOQUEADO=True; MOTIVO=f"🌙 MADRUGADA {AGORA.strftime('%H:%M')} - DORME"
 elif loss_hoje >= max_loss:
     BLOQUEADO=True; MOTIVO="🛑 LOSS -2% ATINGIDO - PAROU"
 elif loss_seq >= 2:
@@ -34,7 +36,7 @@ if BLOQUEADO:
 else:
     st.success(f"✅ LIBERADO - Faltam {4-trades_hoje} trades | Pode perder R$ {max_loss-loss_hoje:.2f}")
 
-st.write(f"Banca R$ {banca:.2f} | Fonte: Binance Oficial - Pares BRL")
+st.write(f"Banca R$ {banca:.2f} | Fonte: Binance Oficial - Pares BRL | Hora Brasil {AGORA.strftime('%H:%M')}")
 
 MOEDAS = {'BTCBRL':'BTC','ETHBRL':'ETH','SOLBRL':'SOL','BNBBRL':'BNB','XRPBRL':'XRP','DOGEBRL':'DOGE','ADABRL':'ADA','LINKBRL':'LINK','AVAXBRL':'AVAX','LTCBRL':'LTC'}
 
@@ -43,7 +45,7 @@ def pega_dados():
     dados=[]
     for symbol, nome in MOEDAS.items():
         try:
-            url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=15m&limit=100"
+            url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=15m&limit=100"
             r = requests.get(url, timeout=10)
             klines = r.json()
             if not klines or isinstance(klines, dict): continue
