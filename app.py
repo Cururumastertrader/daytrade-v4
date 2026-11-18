@@ -4,7 +4,7 @@ import numpy as np
 import requests
 from datetime import datetime, timedelta
 
-st.markdown('<meta http-equiv="refresh" content="45">', unsafe_allow_html=True)
+st.markdown('<meta http-equiv="refresh" content="60">', unsafe_allow_html=True)
 st.set_page_config(page_title="V5.2 MEIO-TERMO", layout="centered", page_icon="🎯")
 st.markdown("<h2 style='text-align:center;'>🎯 V5.2 - MEIO-TERMO</h2>", unsafe_allow_html=True)
 
@@ -18,7 +18,7 @@ if HORA >= 23 or HORA < 8:
 if BLOQUEADO:
     st.error(MOTIVO)
 else:
-    st.success(f"✅ LIBERADO | Hora Brasil {AGORA.strftime('%H:%M')} | Atualiza 45s | Max 2 trades")
+    st.success(f"✅ LIBERADO | Hora Brasil {AGORA.strftime('%H:%M')} | Atualiza 60s | Max 2 trades")
 
 # AVISO NOTICIA - NAO BLOQUEIA
 EM_NOTICIA = (HORA==14 and MIN>=30) or (HORA==15) or (HORA==16 and MIN==0)
@@ -27,7 +27,7 @@ if EM_NOTICIA:
 
 MOEDAS = {'BTCBRL':'BTC','ETHBRL':'ETH','SOLBRL':'SOL','BNBBRL':'BNB','XRPBRL':'XRP','DOGEBRL':'DOGE','ADABRL':'ADA','LINKBRL':'LINK','AVAXBRL':'AVAX','LTCBRL':'LTC'}
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def pega_1h(symbol):
     try:
         url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=1h&limit=50"
@@ -40,7 +40,7 @@ def pega_1h(symbol):
         return mm9 > mm21  # True = 1h subindo
     except: return True
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def pega_dados():
     dados=[]
     for symbol, nome in MOEDAS.items():
@@ -132,4 +132,4 @@ if not df.empty:
     if st.button("🔄 ATUALIZAR AGORA", use_container_width=True):
         st.cache_data.clear(); st.rerun()
 else:
-    st.warning("Carregando... aguarde 45s")
+    st.warning("Carregando... aguarde 60s")
