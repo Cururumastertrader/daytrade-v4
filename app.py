@@ -5,11 +5,12 @@ import requests
 from datetime import datetime, timedelta
 
 st.markdown('<meta http-equiv="refresh" content="45">', unsafe_allow_html=True)
-st.set_page_config(page_title="V5.1 TOP3", layout="centered", page_icon="🎯")
-st.markdown("<h2 style='text-align:center;'>🎯 V5.1 - TOP 3 RISCO MINIMO</h2>", unsafe_allow_html=True)
+st.set_page_config(page_title="V5.2 MEIO-TERMO", layout="centered", page_icon="🎯")
+st.markdown("<h2 style='text-align:center;'>🎯 V5.2 - MEIO-TERMO</h2>", unsafe_allow_html=True)
 
 AGORA = datetime.utcnow() - timedelta(hours=3)
 HORA = AGORA.hour
+MIN = AGORA.minute
 BLOQUEADO = False
 MOTIVO = ""
 if HORA >= 23 or HORA < 8:
@@ -19,7 +20,25 @@ if BLOQUEADO:
 else:
     st.success(f"✅ LIBERADO | Hora Brasil {AGORA.strftime('%H:%M')} | Atualiza 45s | Max 2 trades")
 
+# AVISO NOTICIA - NAO BLOQUEIA
+EM_NOTICIA = (HORA==14 and MIN>=30) or (HORA==15) or (HORA==16 and MIN==0)
+if EM_NOTICIA:
+    st.warning("⚠️ 14h30-16h - DADOS EUA / NOTICIA - Mercado pode virar cassino. Entra so se for MUITO seguro.")
+
 MOEDAS = {'BTCBRL':'BTC','ETHBRL':'ETH','SOLBRL':'SOL','BNBBRL':'BNB','XRPBRL':'XRP','DOGEBRL':'DOGE','ADABRL':'ADA','LINKBRL':'LINK','AVAXBRL':'AVAX','LTCBRL':'LTC'}
+
+@st.cache_data(ttl=30)
+def pega_1h(symbol):
+    try:
+        url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval=1h&limit=50"
+        r = requests.get(url, timeout=10)
+        kl = r.json()
+        if not kl or isinstance(kl, dict): return True
+        c = pd.Series([float(k[4]) for k in kl])
+        mm9 = float(c.rolling(9).mean().iloc[-1])
+        mm21 = float(c.rolling(21).mean().iloc[-1])
+        return mm9 > mm21  # True = 1h subindo
+    except: return True
 
 @st.cache_data(ttl=30)
 def pega_dados():
@@ -32,6 +51,8 @@ def pega_dados():
             if not klines or isinstance(klines, dict): continue
             closes = np.array([float(k[4]) for k in klines])
             volumes = np.array([float(k[5]) for k in klines])
+            highs = np.array([float(k[2]) for k in klines])
+            lows = np.array([float(k[3]) for k in klines])
             close = pd.Series(closes)
             volume = pd.Series(volumes)
             preco = float(close.iloc[-1])
@@ -48,6 +69,15 @@ def pega_dados():
             vol_m = float(volume.rolling(20).mean().iloc[-1])
             vol_a = float(volume.iloc[-1])
             vr = vol_a/vol_m if vol_m>0 else 0
+            # ATR - STOP DINAMICO
+            tr = pd.DataFrame({'h':highs,'l':lows,'c_prev':pd.Series(closes).shift(1)})
+            tr['tr1'] = tr['h']-tr['l']
+            tr['tr2'] = abs(tr['h']-tr['c_prev'])
+            tr['tr3'] = abs(tr['l']-tr['c_prev'])
+            tr['tr'] = tr[['tr1','tr2','tr3']].max(axis=1)
+            atr = float(tr['tr'].rolling(14).mean().iloc[-1])
+            atr_pct = atr/preco if preco>0 else 0.008
+            stop_pct = max(0.005, min(0.012, atr_pct*1.5))  # 0.5% a 1.2%
             score = 50
             if 45<=rsi_val<=65: score+=25
             elif rsi_val>70 or rsi_val<30: score-=20
@@ -56,8 +86,11 @@ def pega_dados():
             if vr>1.2: score+=20
             elif vr<0.8: score-=20
             score=max(0,min(100,int(score)))
-            entrada=preco; stop=preco*0.992; parcial=preco*1.008; alvo=preco*1.016
-            dados.append({'Moeda':nome,'Preco':round(preco,2),'RSI':round(rsi_val,1),'Score':score,'Vol':vr,'MM9':mm9,'MM21':mm21,'Entrada':round(entrada,2),'Stop':round(stop,2),'Parcial':round(parcial,2),'Alvo':round(alvo,2),'VarBTC':var_btc})
+            h1_subindo = pega_1h(symbol)
+            # MEIO-TERMO: se 1h contra, exige 85+
+            score_min = 75 if h1_subindo else 85
+            entrada=preco; stop=preco*(1-stop_pct); parcial=preco*(1+stop_pct); alvo=preco*(1+stop_pct*2)
+            dados.append({'Moeda':nome,'Preco':round(preco,2),'RSI':round(rsi_val,1),'Score':score,'ScoreMin':score_min,'Vol':vr,'MM9':mm9,'MM21':mm21,'Entrada':round(entrada,2),'Stop':round(stop,2),'Parcial':round(parcial,2),'Alvo':round(alvo,2),'VarBTC':var_btc,'StopPct':round(stop_pct*100,2),'H1':h1_subindo})
         except: continue
     return pd.DataFrame(dados).sort_values(by='Score', ascending=False) if dados else pd.DataFrame()
 
@@ -71,22 +104,24 @@ if not df.empty:
             btc_caindo = True
             st.error(f"🛑 BTC CAINDO {var:.2f}% - MERCADO RUIM, NAO OPERA")
     top3 = df.head(3)
-    st.markdown("### 🏆 TOP 3 - SO ENTRA SE FOR MUITO SEGURO")
+    st.markdown("### 🏆 TOP 3 - MEIO-TERMO")
     for i, (_, row) in enumerate(top3.iterrows(), 1):
-        pode = row['Score']>=75 and row['Vol']>1.2 and 45<=row['RSI']<=65 and row['MM9']>row['MM21'] and not BLOQUEADO and not btc_caindo
+        pode = row['Score']>=row['ScoreMin'] and row['Vol']>1.2 and 45<=row['RSI']<=65 and row['MM9']>row['MM21'] and not BLOQUEADO and not btc_caindo
         if pode:
             cor="#00FF88"; bg="#0a2e1f"; titulo=f"🟢 {i}º COMPRA - {row['Moeda']} - Score {row['Score']}"
         else:
             cor="#FFAA00"; bg="#1a1a1a"; titulo=f"🟡 {i}º AGUARDA - {row['Moeda']} - Score {row['Score']}"
+        h1_txt = "1h ✅ SUBINDO" if row['H1'] else f"1h ⚠️ CAINDO - Exige {row['ScoreMin']}+"
         st.markdown(f"""
         <div style='background:{bg}; padding:15px; border-radius:12px; border:2px solid {cor}; margin-bottom:10px;'>
         <h3>{titulo}</h3>
-        <p>RSI {row['RSI']} | Vol {'FORTE' if row['Vol']>1.2 else 'FRACO / MEDIO'}<br><br>
+        <p>RSI {row['RSI']} | Vol {'FORTE' if row['Vol']>1.2 else 'FRACO / MEDIO'} | {h1_txt}<br>
+        Stop dinamico ATR: {row['StopPct']}%<br><br>
         <b>👉 CAMINHADA:</b><br>
         1️⃣ ENTRA a <b>R$ {row['Entrada']}</b><br>
-        2️⃣ Se cair, STOP a <b>R$ {row['Stop']}</b> (-0.8%) - Sai e aceita loss pequeno<br>
-        3️⃣ Se subir, VENDE METADE a <b>R$ {row['Parcial']}</b> (+0.8%) - Garante lucro<br>
-        4️⃣ Deixa o resto, ALVO FINAL a <b>R$ {row['Alvo']}</b> (+1.6%)</p>
+        2️⃣ Se cair, STOP a <b>R$ {row['Stop']}</b> (-{row['StopPct']}%)<br>
+        3️⃣ Se subir, VENDE METADE a <b>R$ {row['Parcial']}</b> (+{row['StopPct']}%)<br>
+        4️⃣ ALVO FINAL a <b>R$ {row['Alvo']}</b> (+{round(row['StopPct']*2,2)}%)</p>
         </div>
         """, unsafe_allow_html=True)
         if pode:
