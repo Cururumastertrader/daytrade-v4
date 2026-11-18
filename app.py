@@ -5,42 +5,23 @@ import requests
 from datetime import datetime, timedelta
 
 st.markdown('<meta http-equiv="refresh" content="45">', unsafe_allow_html=True)
-st.set_page_config(page_title="V4 BINANCE", layout="centered", page_icon="🎯")
-st.markdown("<h2 style='text-align:center;'>🎯 V4 BINANCE - PREÇO IGUAL BINANCE</h2>", unsafe_allow_html=True)
+st.set_page_config(page_title="V5.1 TOP3", layout="centered", page_icon="🎯")
+st.markdown("<h2 style='text-align:center;'>🎯 V5.1 - TOP 3 RISCO MINIMO</h2>", unsafe_allow_html=True)
 
-with st.expander("💰 MINHA BANCA - CLICA AQUI", expanded=True):
-    banca = st.number_input("Banca R$", value=1000, step=100)
-    risco_pct = st.slider("Risco %", 0.5, 2.0, 1.0)
-    loss_hoje = st.number_input("Ja perdi hoje R$", value=0.0, step=10.0)
-    trades_hoje = st.number_input("Trades hoje", value=0, step=1)
-    loss_seq = st.number_input("Loss seguidos", value=0, step=1)
-
-risco_reais = banca * (risco_pct/100)
-max_loss = banca * 0.02
-# HORA BRASIL = UTC - 3h
 AGORA = datetime.utcnow() - timedelta(hours=3)
 HORA = AGORA.hour
 BLOQUEADO = False
 MOTIVO = ""
 if HORA >= 23 or HORA < 8:
     BLOQUEADO=True; MOTIVO=f"🌙 MADRUGADA {AGORA.strftime('%H:%M')} - DORME"
-elif loss_hoje >= max_loss:
-    BLOQUEADO=True; MOTIVO="🛑 LOSS -2% ATINGIDO - PAROU"
-elif loss_seq >= 2:
-    BLOQUEADO=True; MOTIVO="🧠 TILT - 2 LOSSES - PARA 1h"
-elif trades_hoje >= 4:
-    BLOQUEADO=True; MOTIVO="✅ 4 TRADES FEITOS"
-
 if BLOQUEADO:
     st.error(MOTIVO)
 else:
-    st.success(f"✅ LIBERADO - Faltam {4-trades_hoje} trades | Pode perder R$ {max_loss-loss_hoje:.2f}")
-
-st.write(f"Banca R$ {banca:.2f} | Fonte: Binance Oficial - Pares BRL | Hora Brasil {AGORA.strftime('%H:%M')}")
+    st.success(f"✅ LIBERADO | Hora Brasil {AGORA.strftime('%H:%M')} | Atualiza 45s | Max 2 trades")
 
 MOEDAS = {'BTCBRL':'BTC','ETHBRL':'ETH','SOLBRL':'SOL','BNBBRL':'BNB','XRPBRL':'XRP','DOGEBRL':'DOGE','ADABRL':'ADA','LINKBRL':'LINK','AVAXBRL':'AVAX','LTCBRL':'LTC'}
 
-@st.cache_data(ttl=20)
+@st.cache_data(ttl=30)
 def pega_dados():
     dados=[]
     for symbol, nome in MOEDAS.items():
@@ -54,6 +35,8 @@ def pega_dados():
             close = pd.Series(closes)
             volume = pd.Series(volumes)
             preco = float(close.iloc[-1])
+            preco_96 = float(close.iloc[0]) if len(close)>=96 else preco
+            var_btc = (preco-preco_96)/preco_96*100 if nome=='BTC' else 0
             delta = close.diff()
             gain = delta.where(delta>0,0).rolling(14).mean()
             loss = -delta.where(delta<0,0).rolling(14).mean()
@@ -66,39 +49,52 @@ def pega_dados():
             vol_a = float(volume.iloc[-1])
             vr = vol_a/vol_m if vol_m>0 else 0
             score = 50
-            if 45<=rsi_val<=65: score+=20
-            elif 30<=rsi_val<45: score+=10
-            elif rsi_val>70: score-=10
+            if 45<=rsi_val<=65: score+=25
+            elif rsi_val>70 or rsi_val<30: score-=20
             if mm9>mm21: score+=15
-            else: score-=10
-            if vr>1.2: score+=15
-            elif vr<0.8: score-=15
+            else: score-=15
+            if vr>1.2: score+=20
+            elif vr<0.8: score-=20
             score=max(0,min(100,int(score)))
-            entrada=preco; stop=preco*0.992; alvo=preco*1.016; parcial=preco*1.008
-            qtd=(risco_reais/(entrada-stop)) if entrada-stop>0 else 0
-            sinal="🟢 COMPRA" if score>=70 and not BLOQUEADO else "🔴 ESPERA" if BLOQUEADO else "🟡 AGUARDA"
-            dados.append({'Moeda':nome,'Preco':round(preco,2),'RSI':round(rsi_val,1),'Score':score,'Sinal':sinal,'Entrada':round(entrada,2),'Stop':round(stop,2),'Parcial':round(parcial,2),'Alvo':round(alvo,2),'Qtd':round(qtd,3),'Vol':"FORTE" if vr>1.2 else "FRACO" if vr<0.8 else "MEDIO"})
+            entrada=preco; stop=preco*0.992; parcial=preco*1.008; alvo=preco*1.016
+            dados.append({'Moeda':nome,'Preco':round(preco,2),'RSI':round(rsi_val,1),'Score':score,'Vol':vr,'MM9':mm9,'MM21':mm21,'Entrada':round(entrada,2),'Stop':round(stop,2),'Parcial':round(parcial,2),'Alvo':round(alvo,2),'VarBTC':var_btc})
         except: continue
     return pd.DataFrame(dados).sort_values(by='Score', ascending=False) if dados else pd.DataFrame()
 
 df = pega_dados()
 if not df.empty:
-    melhor = df.iloc[0]
-    st.markdown(f"""
-    <div style='background:#0a2e1f; padding:15px; border-radius:12px; border:2px solid #00FF88; text-align:center;'>
-    <h3>🏆 {melhor['Moeda']} - Score {melhor['Score']}</h3>
-    <p>{melhor['Sinal']}<br>
-    Entrada R$ {melhor['Entrada']}<br>
-    Stop R$ {melhor['Stop']} | Parcial R$ {melhor['Parcial']} | Alvo R$ {melhor['Alvo']}<br>
-    Qtd {melhor['Qtd']} = R$ {melhor['Qtd']*melhor['Entrada']:.2f}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    st.code(f"{melhor['Moeda']} - Entrada {melhor['Entrada']} - SL {melhor['Stop']} - TP {melhor['Alvo']} - Parcial {melhor['Parcial']} - Qtd {melhor['Qtd']}", language="text")
+    btc_row = df[df['Moeda']=='BTC']
+    btc_caindo = False
+    if not btc_row.empty:
+        var = float(btc_row.iloc[0]['VarBTC'])
+        if var < -1:
+            btc_caindo = True
+            st.error(f"🛑 BTC CAINDO {var:.2f}% - MERCADO RUIM, NAO OPERA")
+    top3 = df.head(3)
+    st.markdown("### 🏆 TOP 3 - SO ENTRA SE FOR MUITO SEGURO")
+    for i, (_, row) in enumerate(top3.iterrows(), 1):
+        pode = row['Score']>=75 and row['Vol']>1.2 and 45<=row['RSI']<=65 and row['MM9']>row['MM21'] and not BLOQUEADO and not btc_caindo
+        if pode:
+            cor="#00FF88"; bg="#0a2e1f"; titulo=f"🟢 {i}º COMPRA - {row['Moeda']} - Score {row['Score']}"
+        else:
+            cor="#FFAA00"; bg="#1a1a1a"; titulo=f"🟡 {i}º AGUARDA - {row['Moeda']} - Score {row['Score']}"
+        st.markdown(f"""
+        <div style='background:{bg}; padding:15px; border-radius:12px; border:2px solid {cor}; margin-bottom:10px;'>
+        <h3>{titulo}</h3>
+        <p>RSI {row['RSI']} | Vol {'FORTE' if row['Vol']>1.2 else 'FRACO / MEDIO'}<br><br>
+        <b>👉 CAMINHADA:</b><br>
+        1️⃣ ENTRA a <b>R$ {row['Entrada']}</b><br>
+        2️⃣ Se cair, STOP a <b>R$ {row['Stop']}</b> (-0.8%) - Sai e aceita loss pequeno<br>
+        3️⃣ Se subir, VENDE METADE a <b>R$ {row['Parcial']}</b> (+0.8%) - Garante lucro<br>
+        4️⃣ Deixa o resto, ALVO FINAL a <b>R$ {row['Alvo']}</b> (+1.6%)</p>
+        </div>
+        """, unsafe_allow_html=True)
+        if pode:
+            st.code(f"{row['Moeda']} - ENTRA {row['Entrada']} - STOP {row['Stop']} - VENDE METADE {row['Parcial']} - ALVO {row['Alvo']}", language="text")
     st.caption("Segura o texto e clica em Copiar pra colar na Binance")
-    st.markdown("### 📊 TOP 10 - BINANCE BRL")
-    st.dataframe(df[['Moeda','Preco','RSI','Score','Vol','Sinal','Entrada','Stop','Alvo']], use_container_width=True, hide_index=True)
+    st.markdown("### 📊 TOP 10 - Por Score")
+    st.dataframe(df[['Moeda','Preco','RSI','Score','Entrada','Stop','Alvo']], use_container_width=True, hide_index=True)
     if st.button("🔄 ATUALIZAR AGORA", use_container_width=True):
         st.cache_data.clear(); st.rerun()
 else:
-    st.warning("Carregando... aguarde 30s e clique em Atualizar")
-    st.caption("V4 Binance - So em Reais - Max 4 trades - Loss -2% para")
+    st.warning("Carregando... aguarde 45s")
